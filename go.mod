@@ -1,3 +1,3 @@
-module github.com/jlehtimaki/drone_exporter
+module github.com/jlehtimaki/drone-exporter
 
 go 1.13
