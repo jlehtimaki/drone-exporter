@@ -7,7 +7,7 @@ import (
   "os"
 )
 
-func apiRequest(subUrlPath string) (string, error) {
+func ApiRequest(subUrlPath string) (string, error) {
 
   droneUrl := os.Getenv("DRONE_URL")
   token := os.Getenv("TOKEN")

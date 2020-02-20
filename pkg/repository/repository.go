@@ -1,16 +1,15 @@
-package main
+package repository
 
 import (
   "encoding/json"
   "fmt"
-  "github.com/jlehtimaki/drone-exporter/cmd/api"
-  //"github.com/jlehtimaki/drone_exporter@initial/cmd/drivers/influxdb"
+  "github.com/jlehtimaki/drone-exporter/pkg/api"
 )
 
 type Repo struct {
   Id          int     `json:"Id"`
   Name        string	`json:"Name"`
-  Active      bool	`json:"Active"`
+  Active      bool	  `json:"Active"`
   Namespace   string  `json:"Namespace"`
 }
 
@@ -40,9 +39,9 @@ func (rwb *RepoWithBuilds) AddBuild(build Build){
   rwb.Builds = append(rwb.Builds, build)
 }
 
-func getRepos() error {
+func GetRepos() error {
   var subUrlPath = "/api/user/repos"
-  data, err := api.apiRequest(subUrlPath)
+  data, err := api.ApiRequest(subUrlPath)
   if err != nil {
     return fmt.Errorf("could not get repos: %w", err)
   }
@@ -71,7 +70,7 @@ func getBuilds(repos Repo, rbw RepoWithBuilds) (RepoWithBuilds, error) {
   subUrlPath := fmt.Sprintf("/api/repos/%s" +
     "/%s/builds", repos.Namespace, repos.Name)
 
-  data, err := api.apiRequest(subUrlPath)
+  data, err := api.ApiRequest(subUrlPath)
   if err != nil {
     return rbw, fmt.Errorf("could not get builds: %w", err)
   }
@@ -86,11 +85,4 @@ func getBuilds(repos Repo, rbw RepoWithBuilds) (RepoWithBuilds, error) {
   }
 
   return rbw, nil
-}
-
-func main()  {
-  err := getRepos()
-  if err != nil {
-    fmt.Printf("error: %s", err)
-  }
 }
