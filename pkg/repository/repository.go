@@ -3,7 +3,10 @@ package repository
 import (
   "encoding/json"
   "fmt"
+  "github.com/fatih/structs"
   "github.com/jlehtimaki/drone-exporter/pkg/api"
+  "github.com/jlehtimaki/drone-exporter/pkg/drivers"
+  "time"
 )
 
 type Repo struct {
@@ -14,20 +17,22 @@ type Repo struct {
 }
 
 type Build struct {
-  Id          int     `json:"Id"`
-  Trigger     string  `json:"Trigger"`
-  Status      string  `json:"Status"`
-  Number      int     `json:"Number"`
-  Event       string  `json:"Event"`
-  Action      string  `json:"Action"`
-  Link        string  `json:"Link"`
-  Message     string  `json:"Message"`
-  Ref         string  `json:"Ref"`
-  Source      string  `json:"Source"`
-  Target      string  `json:"Target"`
-  Sender      string  `json:"Sender"`
-  Started     int     `json:"Started"`
-  Finished    int     `json:"Finished"`
+  Id          int       `json:"Id"`
+  Trigger     string    `json:"Trigger"`
+  Status      string    `json:"Status"`
+  Number      int       `json:"Number"`
+  Event       string    `json:"Event"`
+  Action      string    `json:"Action"`
+  Link        string    `json:"Link"`
+  Message     string    `json:"Message"`
+  Ref         string    `json:"Ref"`
+  Source      string    `json:"Source"`
+  Target      string    `json:"Target"`
+  Sender      string    `json:"Sender"`
+  Started     int64     `json:"Started"`
+  Finished    int64     `json:"Finished"`
+  Time        time.Time
+  RepoName    string
 }
 
 type RepoWithBuilds struct {
@@ -39,11 +44,12 @@ func (rwb *RepoWithBuilds) AddBuild(build Build){
   rwb.Builds = append(rwb.Builds, build)
 }
 
+
 func GetRepos() error {
   var subUrlPath = "/api/user/repos"
   data, err := api.ApiRequest(subUrlPath)
   if err != nil {
-    return fmt.Errorf("could not get repos: %w", err)
+    return fmt.Errorf("error getting repositories: %w", err)
   }
 
   var repos []Repo
@@ -62,7 +68,13 @@ func GetRepos() error {
       repoWithBuilds = append(repoWithBuilds, rbw)
     }
   }
-
+  for _, v := range repoWithBuilds{
+    for _, x := range v.Builds {
+      x.RepoName = v.Repo.Name
+      x.Time = time.Unix(x.Started, 0)
+      influxdb.Run(structs.Map(x))
+    }
+  }
   return nil
 }
 

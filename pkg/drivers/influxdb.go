@@ -1,41 +1,53 @@
 package influxdb
 
 import (
-	"context"
-	"github.com/influxdata/influxdb-client-go"
-	"log"
+	client "github.com/influxdata/influxdb1-client/v2"
+	"github.com/jlehtimaki/drone-exporter/pkg/env"
+	log "github.com/sirupsen/logrus"
 	"time"
 )
 
-var (
-	myHTTPInfluxAddress = "foobar"
-	myToken = "foobar"
-)
 
-func Run(){
-	influx, err := influxdb.New(myHTTPInfluxAddress, myToken, influxdb.WithHTTPClient(myHTTPClient))
+func Run(builds map[string]interface{}){
+	influxAddress := env.GetEnv("DB_ADDRESS", "http://localhost:8086")
+	database      := env.GetEnv("DATABASE", "example")
+	username      := env.GetEnv("DB_USERNAME", "")
+	password      := env.GetEnv("DB_PASSWORD", "")
+
+	c, err := client.NewHTTPClient(client.HTTPConfig{
+		Addr: influxAddress,
+		Username: username,
+		Password: password,
+	})
 	if err != nil {
-		panic(err) // error handling here; normally we wouldn't use fmt but it works for the example
+		log.Fatal("Error creating InfluxDB Client: ", err.Error())
 	}
 
-	// we use client.NewRowMetric for the example because it's easy, but if you need extra performance
-	// it is fine to manually build the []client.Metric{}.
-	myMetrics := []influxdb.Metric{
-		influxdb.NewRowMetric(
-			map[string]interface{}{"memory": 1000, "cpu": 0.93},
-			"system-metrics",
-			map[string]string{"hostname": "hal9000"},
-			time.Date(2018, 3, 4, 5, 6, 7, 8, time.UTC)),
-		influxdb.NewRowMetric(
-			map[string]interface{}{"memory": 1000, "cpu": 0.93},
-			"system-metrics",
-			map[string]string{"hostname": "hal9000"},
-			time.Date(2018, 3, 4, 5, 6, 7, 9, time.UTC)),
+		// Create a new point batch
+		bp, err := client.NewBatchPoints(client.BatchPointsConfig{
+			Database:  database,
+			Precision: "us",
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		tags := map[string]string{"Id": string(builds["Id"].(int))}
+		// Create a point and add to batch
+		pt, err := client.NewPoint("drone", tags, builds, builds["Time"].(time.Time))
+		if err != nil {
+			log.Fatal(err)
+		}
+		bp.AddPoint(pt)
+
+		// Write the batch
+		if err := c.Write(bp); err != nil {
+			log.Fatal(err)
+		}
+
+	// Close client resources
+	if err := c.Close(); err != nil {
+		log.Fatal(err)
 	}
 
-	// The actual write..., this method can be called concurrently.
-	if _, err := influx.Write(context.Background(), "my-awesome-bucket", "my-very-awesome-org", myMetrics...); err != nil {
-		log.Fatal(err) // as above use your own error handling here.
-	}
-	influx.Close() // closes the client.  After this the client is useless.
 }

@@ -2,15 +2,19 @@ package api
 
 import (
   "fmt"
+  "github.com/jlehtimaki/drone-exporter/pkg/env"
   "io/ioutil"
   "net/http"
-  "os"
 )
 
 func ApiRequest(subUrlPath string) (string, error) {
 
-  droneUrl := os.Getenv("DRONE_URL")
-  token := os.Getenv("TOKEN")
+  droneUrl := env.GetEnv("DRONE_URL","")
+  token := env.GetEnv("TOKEN","")
+
+  if droneUrl == "" || token == "" {
+    return "", fmt.Errorf("could not read DRONE_URL or TOKEN from env")
+  }
 
   urlPath := fmt.Sprintf( "%s%s", droneUrl, subUrlPath)
   client := &http.Client{}
