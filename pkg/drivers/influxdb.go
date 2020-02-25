@@ -8,11 +8,11 @@ import (
 )
 
 
-func Run(builds map[string]interface{}){
+func Run(builds map[string]interface{}, pipelineName string){
 	influxAddress := env.GetEnv("DB_ADDRESS", "http://localhost:8086")
 	database      := env.GetEnv("DATABASE", "example")
-	username      := env.GetEnv("DB_USERNAME", "")
-	password      := env.GetEnv("DB_PASSWORD", "")
+	username      := env.GetEnv("DB_USERNAME", "foo")
+	password      := env.GetEnv("DB_PASSWORD", "bar")
 
 	c, err := client.NewHTTPClient(client.HTTPConfig{
 		Addr: influxAddress,
@@ -32,7 +32,7 @@ func Run(builds map[string]interface{}){
 			log.Fatal(err)
 		}
 
-		tags := map[string]string{"Id": string(builds["Id"].(int))}
+		tags := map[string]string{"Pipeline": pipelineName}
 		// Create a point and add to batch
 		pt, err := client.NewPoint("drone", tags, builds, builds["Time"].(time.Time))
 		if err != nil {

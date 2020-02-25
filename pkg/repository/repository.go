@@ -5,7 +5,8 @@ import (
   "fmt"
   "github.com/fatih/structs"
   "github.com/jlehtimaki/drone-exporter/pkg/api"
-  "github.com/jlehtimaki/drone-exporter/pkg/drivers"
+  influxdb "github.com/jlehtimaki/drone-exporter/pkg/drivers"
+  "strconv"
   "time"
 )
 
@@ -34,15 +35,19 @@ type Build struct {
   Time        time.Time
   RepoName    string
   RepoTeam    string
+  Pipeline    string
+  BuildState  int
 }
 
-type RepoWithBuilds struct {
-  Repo    Repo
-  Builds   []Build
-}
-
-func (rwb *RepoWithBuilds) AddBuild(build Build){
-  rwb.Builds = append(rwb.Builds, build)
+type BuildInfo struct {
+  Stages        []struct  {
+    Status      string    `json:"Status"`
+    Kind        string    `json:"Kind"`
+    Type        string    `json:"Type"`
+    Name        string    `json:"Name"`
+    Started     int       `json:"Started"`
+    Finished    int       `json:"Finished"`
+  }
 }
 
 
@@ -54,49 +59,78 @@ func GetRepos() error {
   }
 
   var repos []Repo
-  var repoWithBuilds []RepoWithBuilds
   if err := json.Unmarshal([]byte(data), &repos); err != nil {
     return fmt.Errorf( "could not create repos struct: %w", err)
   }
   for _, v := range repos {
     if v.Active {
-      rbw := RepoWithBuilds{}
-      rbw.Repo = v
-      rbw, err := getBuilds(v, rbw)
+      err := getBuilds(v)
       if err != nil {
-        return err
+        return fmt.Errorf("could not get builds: %w", err)
       }
-      repoWithBuilds = append(repoWithBuilds, rbw)
-    }
-  }
-  for _, v := range repoWithBuilds{
-    for _, x := range v.Builds {
-      x.RepoTeam = v.Repo.Namespace
-      x.RepoName = v.Repo.Name
-      x.Time = time.Unix(x.Started, 0)
-      influxdb.Run(structs.Map(x))
     }
   }
   return nil
 }
 
-func getBuilds(repos Repo, rbw RepoWithBuilds) (RepoWithBuilds, error) {
-  subUrlPath := fmt.Sprintf("/api/repos/%s" +
-    "/%s/builds", repos.Namespace, repos.Name)
+func getBuilds(repo Repo) error {
+  // Setup API url path
+  subUrlPath := fmt.Sprintf("/api/repos/%s/%s/builds", repo.Namespace, repo.Name)
 
+  // Do the API call to get Build data
   data, err := api.ApiRequest(subUrlPath)
   if err != nil {
-    return rbw, fmt.Errorf("could not get builds: %w", err)
+    return fmt.Errorf("could not get builds: %w", err)
   }
 
+  // Get builds for the repo
   var builds []Build
   if err:= json.Unmarshal([]byte(data), &builds); err != nil {
-    return rbw, fmt.Errorf("could not create build struct: %w", err)
+    return fmt.Errorf("could not create build struct: %w", err)
   }
 
+  // Loop through Builds and get more detailed information
   for _, v := range builds {
-    rbw.AddBuild(v)
+    err = getBuildInfo(v, repo.Namespace, repo.Name)
+    if err != nil {
+      return fmt.Errorf("could not get build info: %w", err)
+    }
   }
 
-  return rbw, nil
+  return nil
+}
+
+func getBuildInfo(build Build, repoNamespace string, repoName string) error{
+  // Set empty BuildInfo Struct
+  var buildInfo BuildInfo
+
+  // Set build variables
+  build.Time = time.Unix(build.Started, 0)
+  build.RepoTeam = repoNamespace
+  build.RepoName = repoName
+  if build.Status == "success" {
+    build.BuildState = 1
+  } else {
+    build.BuildState = 0
+  }
+
+  // Do API Call to Drone
+  var subUrlPath = fmt.Sprintf("/api/repos/%s/%s/builds/%s", repoNamespace, repoName, strconv.Itoa(build.Number))
+  data, err := api.ApiRequest(subUrlPath)
+  if err != nil {
+    return fmt.Errorf("error getting buildinfo: %w", err)
+  }
+
+  // Create struct of API Request data
+  if err := json.Unmarshal([]byte(data), &buildInfo); err != nil {
+    return fmt.Errorf("could not create buildinfo struct: %w", err)
+  }
+
+  // Loop through build info stages and save the results into DB
+  for _, y := range buildInfo.Stages {
+    build.Pipeline = y.Name
+    influxdb.Run(structs.Map(build), y.Name)
+  }
+
+  return nil
 }
