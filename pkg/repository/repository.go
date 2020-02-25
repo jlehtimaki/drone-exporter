@@ -11,7 +11,7 @@ import (
 
 type Repo struct {
   Id          int     `json:"Id"`
-  Name        string	`json:"Name"`
+  Name        string  `json:"Name"`
   Active      bool	  `json:"Active"`
   Namespace   string  `json:"Namespace"`
 }
@@ -33,6 +33,7 @@ type Build struct {
   Finished    int64     `json:"Finished"`
   Time        time.Time
   RepoName    string
+  RepoTeam    string
 }
 
 type RepoWithBuilds struct {
@@ -70,6 +71,7 @@ func GetRepos() error {
   }
   for _, v := range repoWithBuilds{
     for _, x := range v.Builds {
+      x.RepoTeam = v.Repo.Namespace
       x.RepoName = v.Repo.Name
       x.Time = time.Unix(x.Started, 0)
       influxdb.Run(structs.Map(x))
