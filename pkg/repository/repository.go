@@ -108,11 +108,6 @@ func getBuildInfo(build Build, repoNamespace string, repoName string) error{
   build.Time = time.Unix(build.Started, 0)
   build.RepoTeam = repoNamespace
   build.RepoName = repoName
-  if build.Status == "success" {
-    build.BuildState = 1
-  } else {
-    build.BuildState = 0
-  }
 
   // Do API Call to Drone
   var subUrlPath = fmt.Sprintf("/api/repos/%s/%s/builds/%s", repoNamespace, repoName, strconv.Itoa(build.Number))
@@ -128,6 +123,13 @@ func getBuildInfo(build Build, repoNamespace string, repoName string) error{
 
   // Loop through build info stages and save the results into DB
   for _, y := range buildInfo.Stages {
+    if y.Status == "success" {
+      build.BuildState = 1
+      build.Status = "success"
+    } else {
+      build.BuildState = 0
+      build.Status = "failure"
+    }
     build.Pipeline = y.Name
     influxdb.Run(structs.Map(build), y.Name)
   }
