@@ -122,16 +122,19 @@ func getBuildInfo(build Build, repoNamespace string, repoName string) error{
   }
 
   // Loop through build info stages and save the results into DB
+  // Don't save running pipelines and set BuildState integer according to the status because of Grafana
   for _, y := range buildInfo.Stages {
-    if y.Status == "success" {
-      build.BuildState = 1
-      build.Status = "success"
-    } else {
-      build.BuildState = 0
-      build.Status = "failure"
+    if y.Status != "running" {
+      if y.Status == "success" {
+        build.BuildState = 1
+        build.Status = "success"
+      } else {
+        build.BuildState = 0
+        build.Status = "failure"
+      }
+      build.Pipeline = y.Name
+      influxdb.Run(structs.Map(build), y.Name)
     }
-    build.Pipeline = y.Name
-    influxdb.Run(structs.Map(build), y.Name)
   }
 
   return nil
