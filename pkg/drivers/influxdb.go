@@ -73,7 +73,7 @@ func Run(builds map[string]interface{}, pipelineName string) error {
 	return nil
 }
 
-func RunBatch(repoName, pipelineName string, fieldList []map[string]interface{}) error {
+func RunBatch(fieldList []map[string]interface{}) error {
 	// Create a new point batch
 	bp, err := client.NewBatchPoints(client.BatchPointsConfig{
 		Database:  database,
@@ -83,10 +83,14 @@ func RunBatch(repoName, pipelineName string, fieldList []map[string]interface{})
 		return err
 	}
 
-	tags := map[string]string{"Repo": repoName, "Pipeline": pipelineName}
-
 	for _, fields := range fieldList {
 		// Create a point and add to batch
+		tags := map[string]string{
+			"Repo":    fields["Repo"].(string),
+			"BuildId": string(fields["BuildId"].(int)),
+			"Os":      fields["Os"].(string),
+			"Arch":    fields["Arch"].(string),
+		}
 		pt, err := client.NewPoint("drone", tags, fields, fields["Time"].(time.Time))
 		if err != nil {
 			return err
