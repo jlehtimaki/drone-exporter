@@ -79,6 +79,7 @@ type Fields struct {
 	Duration int64
 	Os       string
 	Arch     string
+	Status   string
 	Time     time.Time
 }
 
@@ -174,6 +175,7 @@ func sendBuildPipelines(build Build) error {
 				Duration: pipeline.Stopped - pipeline.Started,
 				Os:       pipeline.Os,
 				Arch:     pipeline.Arch,
+				Status:   pipeline.Status,
 				Time:     time.Unix(pipeline.Started, 0),
 			}
 
