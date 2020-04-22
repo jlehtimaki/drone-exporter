@@ -17,6 +17,7 @@ import (
 type Repo struct {
 	Id        int
 	Name      string
+	Slug      string
 	Active    bool
 	Namespace string
 }
@@ -72,15 +73,16 @@ type BuildInfo struct {
 
 // a pipeline with some repo data
 type Fields struct {
-	Repo     string
-	BuildId  int
-	Sender   string
-	WaitTime int64
-	Duration int64
-	Os       string
-	Arch     string
-	Status   string
-	Time     time.Time
+	RepoSlug    string
+	BuildId     int
+	BuildSender string
+	WaitTime    int64
+	Duration    int64
+	Os          string
+	Arch        string
+	Status      string
+	Name        string
+	Time        time.Time
 }
 
 func GetRepos() error {
@@ -133,10 +135,7 @@ func getBuilds(repo Repo) error {
 	log.Debugf("[%s] found %d builds", repo.Name, len(builds))
 	// Loop through Builds and get more detailed information
 	for _, build := range builds {
-		build.Time = time.Unix(build.Started, 0)
-		build.RepoTeam = repo.Namespace
-		build.RepoName = repo.Name
-		if err := sendBuildPipelines(build); err != nil {
+		if err := sendBuildPipelines(repo, build); err != nil {
 			return err
 		}
 	}
@@ -144,11 +143,11 @@ func getBuilds(repo Repo) error {
 	return nil
 }
 
-func sendBuildPipelines(build Build) error {
+func sendBuildPipelines(repo Repo, build Build) error {
 
 	// Do API Call to Drone
-	var subUrlPath = fmt.Sprintf("/api/repos/%s/%s/builds/%s", build.RepoTeam, build.RepoName, strconv.Itoa(build.Number))
-	log.Debugf("[%s] pulling builds: %s", build.RepoTeam, subUrlPath)
+	var subUrlPath = fmt.Sprintf("/api/repos/%s/%s/builds/%s", repo.Namespace, repo.Name, strconv.Itoa(build.Number))
+	log.Debugf("[%s] pulling builds: %s", repo.Slug, subUrlPath)
 	data, err := api.ApiRequest(subUrlPath)
 	if err != nil {
 		return fmt.Errorf("error getting buildinfo: %w", err)
@@ -165,25 +164,26 @@ func sendBuildPipelines(build Build) error {
 	// Don't save running pipelines and set BuildState integer according to the status because of Grafana
 
 	fieldList := []map[string]interface{}{}
-	for _, pipeline := range buildInfo.Stages {
-		if pipeline.Status != "running" {
+	for _, stage := range buildInfo.Stages {
+		if stage.Status != "running" {
 			fields := &Fields{
-				Repo:     build.RepoName,
-				BuildId:  build.Id,
-				Sender:   build.Sender,
-				WaitTime: pipeline.Started - pipeline.Created,
-				Duration: pipeline.Stopped - pipeline.Started,
-				Os:       pipeline.Os,
-				Arch:     pipeline.Arch,
-				Status:   pipeline.Status,
-				Time:     time.Unix(pipeline.Started, 0),
+				RepoSlug:    repo.Slug,
+				BuildId:     build.Id,
+				BuildSender: build.Sender,
+				WaitTime:    stage.Started - stage.Created,
+				Duration:    stage.Stopped - stage.Started,
+				Os:          stage.Os,
+				Arch:        stage.Arch,
+				Status:      stage.Status,
+				Name:        stage.Name,
+				Time:        time.Unix(stage.Started, 0),
 			}
 
 			fieldList = append(fieldList, structs.Map(fields))
 		}
 	}
 
-	log.Debugf("[%s] sending %d points to influx", build.RepoName, len(fieldList))
+	log.Debugf("[%s] sending %d points to influx", repo.Slug, len(fieldList))
 	if err := influxdb.RunBatch(fieldList); err != nil {
 		return err
 	}

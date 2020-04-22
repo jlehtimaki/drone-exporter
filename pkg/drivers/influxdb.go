@@ -1,7 +1,6 @@
 package influxdb
 
 import (
-	"fmt"
 	"time"
 
 	client "github.com/influxdata/influxdb1-client/v2"
@@ -87,13 +86,10 @@ func RunBatch(fieldList []map[string]interface{}) error {
 	for _, fields := range fieldList {
 		// Create a point and add to batch
 		tags := map[string]string{
-			"Repo":    fields["Repo"].(string),
-			"BuildId": fmt.Sprintf("build-%d", fields["BuildId"].(int)),
-			"Os":      fields["Os"].(string),
-			"Arch":    fields["Arch"].(string),
-			"Status":  fields["Status"].(string),
+			"Name":   fields["Name"].(string),
+			"Status": fields["Status"].(string),
 		}
-		pt, err := client.NewPoint("drone", tags, fields, fields["Time"].(time.Time))
+		pt, err := client.NewPoint(fields["RepoSlug"].(string), tags, fields, fields["Time"].(time.Time))
 		if err != nil {
 			return err
 		}
