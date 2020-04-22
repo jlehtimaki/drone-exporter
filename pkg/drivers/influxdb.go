@@ -1,53 +1,107 @@
 package influxdb
 
 import (
+	"time"
+
 	client "github.com/influxdata/influxdb1-client/v2"
 	"github.com/jlehtimaki/drone-exporter/pkg/env"
-	log "github.com/sirupsen/logrus"
-	"time"
 )
 
+var (
+	influxAddress = env.GetEnv("DB_ADDRESS", "http://localhost:8086")
+	database      = env.GetEnv("DATABASE", "example")
+	username      = env.GetEnv("DB_USERNAME", "foo")
+	password      = env.GetEnv("DB_PASSWORD", "bar")
+	influxClient  client.Client
+)
 
-func Run(builds map[string]interface{}, pipelineName string){
-	influxAddress := env.GetEnv("DB_ADDRESS", "http://localhost:8086")
-	database      := env.GetEnv("DATABASE", "example")
-	username      := env.GetEnv("DB_USERNAME", "foo")
-	password      := env.GetEnv("DB_PASSWORD", "bar")
+func getInfluxClient() (client.Client, error) {
+	if influxClient != nil {
+		return influxClient, nil
+	}
 
 	c, err := client.NewHTTPClient(client.HTTPConfig{
-		Addr: influxAddress,
+		Addr:     influxAddress,
 		Username: username,
 		Password: password,
 	})
+
 	if err != nil {
-		log.Fatal("Error creating InfluxDB Client: ", err.Error())
+		return nil, err
 	}
 
-		// Create a new point batch
-		bp, err := client.NewBatchPoints(client.BatchPointsConfig{
-			Database:  database,
-			Precision: "us",
-		})
-		if err != nil {
-			log.Fatal(err)
-		}
+	influxClient = c
+	return influxClient, nil
+}
 
-		tags := map[string]string{"Pipeline": pipelineName}
+func Close() error {
+	c, err := getInfluxClient()
+	if err != nil {
+		return err
+	}
+
+	return c.Close()
+}
+
+func Run(builds map[string]interface{}, pipelineName string) error {
+	// Create a new point batch
+	bp, err := client.NewBatchPoints(client.BatchPointsConfig{
+		Database:  database,
+		Precision: "s",
+	})
+	if err != nil {
+		return err
+	}
+
+	tags := map[string]string{"Pipeline": pipelineName}
+	// Create a point and add to batch
+	pt, err := client.NewPoint("drone", tags, builds, builds["Time"].(time.Time))
+	if err != nil {
+		return err
+	}
+	bp.AddPoint(pt)
+
+	// Write the batch
+	c, err := getInfluxClient()
+	if err != nil {
+		return err
+	}
+	if err := c.Write(bp); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func RunBatch(repoName, pipelineName string, fieldList []map[string]interface{}) error {
+	// Create a new point batch
+	bp, err := client.NewBatchPoints(client.BatchPointsConfig{
+		Database:  database,
+		Precision: "s",
+	})
+	if err != nil {
+		return err
+	}
+
+	tags := map[string]string{"Repo": repoName, "Pipeline": pipelineName}
+
+	for _, fields := range fieldList {
 		// Create a point and add to batch
-		pt, err := client.NewPoint("drone", tags, builds, builds["Time"].(time.Time))
+		pt, err := client.NewPoint("drone", tags, fields, fields["Time"].(time.Time))
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 		bp.AddPoint(pt)
-
-		// Write the batch
-		if err := c.Write(bp); err != nil {
-			log.Fatal(err)
-		}
-
-	// Close client resources
-	if err := c.Close(); err != nil {
-		log.Fatal(err)
 	}
 
+	// Write the batch
+	c, err := getInfluxClient()
+	if err != nil {
+		return err
+	}
+	if err := c.Write(bp); err != nil {
+		return err
+	}
+
+	return nil
 }
