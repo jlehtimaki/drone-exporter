@@ -73,7 +73,7 @@ func Run(builds map[string]interface{}, pipelineName string) error {
 	return nil
 }
 
-func RunBatch(fieldList []map[string]interface{}) error {
+func RunBatch(measurement string, tags map[string]string, fieldList []map[string]interface{}) error {
 	// Create a new point batch
 	bp, err := client.NewBatchPoints(client.BatchPointsConfig{
 		Database:  database,
@@ -85,11 +85,7 @@ func RunBatch(fieldList []map[string]interface{}) error {
 
 	for _, fields := range fieldList {
 		// Create a point and add to batch
-		tags := map[string]string{
-			"Name":   fields["Name"].(string),
-			"Status": fields["Status"].(string),
-		}
-		pt, err := client.NewPoint(fields["RepoSlug"].(string), tags, fields, fields["Time"].(time.Time))
+		pt, err := client.NewPoint(measurement, tags, fields, fields["Time"].(time.Time))
 		if err != nil {
 			return err
 		}

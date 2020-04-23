@@ -72,10 +72,7 @@ type BuildInfo struct {
 }
 
 // a pipeline with some repo data
-type Fields struct {
-	RepoSlug    string
-	BuildId     int
-	BuildSender string
+type InfluxStage struct {
 	WaitTime    int64
 	Duration    int64
 	Os          string
@@ -135,7 +132,7 @@ func getBuilds(repo Repo) error {
 	log.Debugf("[%s] found %d builds", repo.Name, len(builds))
 	// Loop through Builds and get more detailed information
 	for _, build := range builds {
-		if err := sendBuildPipelines(repo, build); err != nil {
+		if err := sendStages(repo, build); err != nil {
 			return err
 		}
 	}
@@ -143,8 +140,7 @@ func getBuilds(repo Repo) error {
 	return nil
 }
 
-func sendBuildPipelines(repo Repo, build Build) error {
-
+func sendStages(repo Repo, build Build) error {
 	// Do API Call to Drone
 	var subUrlPath = fmt.Sprintf("/api/repos/%s/%s/builds/%s", repo.Namespace, repo.Name, strconv.Itoa(build.Number))
 	log.Debugf("[%s] pulling builds: %s", repo.Slug, subUrlPath)
@@ -166,17 +162,14 @@ func sendBuildPipelines(repo Repo, build Build) error {
 	fieldList := []map[string]interface{}{}
 	for _, stage := range buildInfo.Stages {
 		if stage.Status != "running" {
-			fields := &Fields{
-				RepoSlug:    repo.Slug,
-				BuildId:     build.Id,
-				BuildSender: build.Sender,
+			fields := &InfluxStage{
+				Time:        time.Unix(stage.Started, 0),
 				WaitTime:    stage.Started - stage.Created,
 				Duration:    stage.Stopped - stage.Started,
 				Os:          stage.Os,
 				Arch:        stage.Arch,
 				Status:      stage.Status,
 				Name:        stage.Name,
-				Time:        time.Unix(stage.Started, 0),
 			}
 
 			fieldList = append(fieldList, structs.Map(fields))
@@ -184,7 +177,12 @@ func sendBuildPipelines(repo Repo, build Build) error {
 	}
 
 	log.Debugf("[%s] sending %d points to influx", repo.Slug, len(fieldList))
-	if err := influxdb.RunBatch(fieldList); err != nil {
+	tags := map[string]string{
+		"Slug": repo.Slug,
+		"BuildId": fmt.Sprintf("build-%d", build.Id),
+		"Sender": build.Sender,
+	}
+	if err := influxdb.RunBatch("stages", tags, fieldList); err != nil {
 		return err
 	}
 
