@@ -15,7 +15,7 @@ var (
 	influxClient  client.Client
 )
 
-func getInfluxClient() (client.Client, error) {
+func GetClient() (client.Client, error) {
 	if influxClient != nil {
 		return influxClient, nil
 	}
@@ -35,9 +35,13 @@ func getInfluxClient() (client.Client, error) {
 }
 
 func Close() error {
-	c, err := getInfluxClient()
+	c, err := GetClient()
 	if err != nil {
 		return err
+	}
+
+	if c == nil {
+		return nil
 	}
 
 	return c.Close()
@@ -62,7 +66,7 @@ func Run(builds map[string]interface{}, pipelineName string) error {
 	bp.AddPoint(pt)
 
 	// Write the batch
-	c, err := getInfluxClient()
+	c, err := GetClient()
 	if err != nil {
 		return err
 	}
@@ -73,7 +77,7 @@ func Run(builds map[string]interface{}, pipelineName string) error {
 	return nil
 }
 
-func RunBatch(measurement string, tags map[string]string, fieldList []map[string]interface{}) error {
+func Batch(measurement string, fieldList []map[string]interface{}) error {
 	// Create a new point batch
 	bp, err := client.NewBatchPoints(client.BatchPointsConfig{
 		Database:  database,
@@ -85,6 +89,8 @@ func RunBatch(measurement string, tags map[string]string, fieldList []map[string
 
 	for _, fields := range fieldList {
 		// Create a point and add to batch
+		tags := fields["Tags"].(map[string]string)
+		delete(fields, "Tags")
 		pt, err := client.NewPoint(measurement, tags, fields, fields["Time"].(time.Time))
 		if err != nil {
 			return err
@@ -93,7 +99,7 @@ func RunBatch(measurement string, tags map[string]string, fieldList []map[string
 	}
 
 	// Write the batch
-	c, err := getInfluxClient()
+	c, err := GetClient()
 	if err != nil {
 		return err
 	}

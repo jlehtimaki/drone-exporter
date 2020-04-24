@@ -4,10 +4,10 @@ WORKDIR /build
 
 COPY . .
 
-RUN cd cmd/drone-exporter && go build
+RUN go build
 
 FROM golang:alpine
 
-COPY --from=builder /build/cmd/drone-exporter/drone-exporter /bin/
+COPY --from=builder /build/drone-exporter /bin/
 
 ENTRYPOINT ["/bin/drone-exporter"]

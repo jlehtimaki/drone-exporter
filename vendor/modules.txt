@@ -1,5 +1,9 @@
+# github.com/drone/drone-go v1.3.1
+github.com/drone/drone-go/drone
 # github.com/fatih/structs v1.1.0
 github.com/fatih/structs
+# github.com/golang/protobuf v1.2.0
+github.com/golang/protobuf/proto
 # github.com/influxdata/influxdb1-client v0.0.0-20191209144304-8bf82d3c094d
 github.com/influxdata/influxdb1-client/models
 github.com/influxdata/influxdb1-client/pkg/escape
@@ -8,5 +12,19 @@ github.com/influxdata/influxdb1-client/v2
 github.com/konsorten/go-windows-terminal-sequences
 # github.com/sirupsen/logrus v1.4.2
 github.com/sirupsen/logrus
+# golang.org/x/net v0.0.0-20190108225652-1e06a53dbb7e
+golang.org/x/net/context
+golang.org/x/net/context/ctxhttp
+# golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
+golang.org/x/oauth2
+golang.org/x/oauth2/internal
 # golang.org/x/sys v0.0.0-20190422165155-953cdadca894
 golang.org/x/sys/unix
+# google.golang.org/appengine v1.4.0
+google.golang.org/appengine/internal
+google.golang.org/appengine/internal/base
+google.golang.org/appengine/internal/datastore
+google.golang.org/appengine/internal/log
+google.golang.org/appengine/internal/remote_api
+google.golang.org/appengine/internal/urlfetch
+google.golang.org/appengine/urlfetch
