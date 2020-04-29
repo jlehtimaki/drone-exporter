@@ -16,6 +16,9 @@ import (
 
 var logLevel = env.GetEnv("LOG_LEVEL", "error")
 var driver = env.GetEnv("DRIVER", "influxdb")
+var cli dronecli.Client
+
+const pageSize = 25
 
 func main() {
 	// Set logging format
@@ -54,7 +57,7 @@ func main() {
 		log.Fatal(errors.New("unable to create drone client, please check env DRONE_URL and DRONE_TOKEN"))
 	}
 
-	cli := *droneClient
+	cli = *droneClient
 
 	// Get loop interval
 	interval, err := strconv.Atoi(env.GetEnv("INTERVAL", "2"))
@@ -63,7 +66,6 @@ func main() {
 	}
 
 	// Start main loop
-
 	for {
 		log.Info("Getting Repos")
 		repos, err := cli.RepoList()
@@ -71,9 +73,13 @@ func main() {
 			log.Fatal(err)
 		}
 
-		var buildFields []map[string]interface{}
 		for _, repo := range repos {
-			builds, err := cli.BuildList(repo.Namespace, repo.Name, dronecli.ListOptions{})
+			// process first page
+			page := 1
+			builds, err := cli.BuildList(repo.Namespace, repo.Name, dronecli.ListOptions{
+				Page: page,
+				Size: pageSize,
+			})
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -81,103 +87,138 @@ func main() {
 			if len(builds) == 0 {
 				continue
 			}
+			processBuilds(repo, builds)
+			if len(builds) < pageSize {
+				continue //no pages
+			}
 
-			log.Debugf("[%s] processing %d builds", repo.Slug, len(builds))
-			var stageFields []map[string]interface{}
-			var stepFields []map[string]interface{}
-			for _, build := range builds {
-				if build.Status == "running" {
-					continue
-				}
-				buildInfo, err := cli.Build(repo.Namespace, repo.Name, int(build.Number))
+			//paginate
+			for len(builds) > 0 {
+				page++
+				builds, err = cli.BuildList(repo.Namespace, repo.Name, dronecli.ListOptions{
+					Page: page,
+					Size: pageSize,
+				})
 				if err != nil {
 					log.Fatal(err)
 				}
 
-				buildFields = append(buildFields, structs.Map(&influxdb.Build{
-					Time:     time.Unix(buildInfo.Started, 0),
-					Number:   buildInfo.Number,
-					WaitTime: buildInfo.Started - buildInfo.Created,
-					Duration: buildInfo.Finished - buildInfo.Started,
-					Source:   buildInfo.Source,
-					Target:   buildInfo.Target,
-					Started:  buildInfo.Started,
-					Created:  buildInfo.Created,
-					Finished: buildInfo.Finished,
-					Tags: map[string]string{
-						"Slug":    repo.Slug,
-						"BuildId": fmt.Sprintf("build-%d", buildInfo.Number),
-					},
-				}))
-
-				for _, stage := range buildInfo.Stages {
-					// Loop through build info stages and save the results into DB
-					// Don't save running pipelines and set BuildState integer according to the status because of Grafana
-					if stage.Status != "running" {
-						stageFields = append(stageFields, structs.Map(&influxdb.Stage{
-							Time:     time.Unix(stage.Started, 0),
-							WaitTime: stage.Started - stage.Created,
-							Duration: stage.Stopped - stage.Started,
-							OS:       stage.OS,
-							Arch:     stage.Arch,
-							Status:   stage.Status,
-							Name:     stage.Name,
-							Tags: map[string]string{
-								"Slug":    repo.Slug,
-								"BuildId": fmt.Sprintf("build-%d", build.Number),
-								"Sender":  build.Sender,
-							},
-						}))
-					}
-
-					for _, step := range stage.Steps {
-						stepFields = append(stepFields, structs.Map(&influxdb.Step{
-							Time:     time.Unix(step.Started, 0),
-							Duration: step.Stopped - step.Started,
-							Name:     step.Name,
-							Status:   step.Status,
-							Tags: map[string]string{
-								"Slug":    repo.Slug,
-								"BuildId": fmt.Sprintf("build-%d", build.Number),
-								"Sender":  build.Sender,
-							},
-						}))
-					}
+				if len(builds) == 0 {
+					continue
+				}
+				processBuilds(repo, builds)
+				if len(builds) < pageSize {
+					continue
 				}
 			}
 
-			if len(stageFields) > 0 {
-				log.Debugf("[%s] sending %d stages to db", repo.Slug, len(stageFields))
-				go func() {
-					err = influxdb.Batch("stages", stageFields)
-					if err != nil {
-						log.Error(err)
-					}
-				}()
-			}
-
-			if len(stepFields) > 0 {
-				log.Debugf("[%s] sending %d steps to db", repo.Slug, len(stepFields))
-				go func() {
-					err = influxdb.Batch("steps", stepFields)
-					if err != nil {
-						log.Error(err)
-					}
-				}()
-			}
-		}
-
-		if len(buildFields) > 0 {
-			log.Debugf("sending %d builds to db", len(buildFields))
-			go func() {
-				err = influxdb.Batch("builds", buildFields)
-				if err != nil {
-					log.Error(err)
-				}
-			}()
 		}
 
 		log.Infof("Waiting %d minutes", interval)
 		time.Sleep(time.Duration(interval) * time.Minute)
+	}
+}
+
+func processBuilds(repo *dronecli.Repo, builds []*dronecli.Build) {
+	log.Debugf("[%s] processing %d builds", repo.Slug, len(builds))
+	var buildFields []map[string]interface{}
+	var stageFields []map[string]interface{}
+	var stepFields []map[string]interface{}
+	var err error
+	for _, build := range builds {
+		if build.Status == "running" {
+			continue
+		}
+		buildInfo, err := cli.Build(repo.Namespace, repo.Name, int(build.Number))
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		buildFields = append(buildFields, structs.Map(&influxdb.Build{
+			Time:     time.Unix(buildInfo.Started, 0),
+			Number:   buildInfo.Number,
+			WaitTime: buildInfo.Started - buildInfo.Created,
+			Duration: buildInfo.Finished - buildInfo.Started,
+			Source:   buildInfo.Source,
+			Target:   buildInfo.Target,
+			Started:  buildInfo.Started,
+			Created:  buildInfo.Created,
+			Finished: buildInfo.Finished,
+			Tags: map[string]string{
+				"Slug":    repo.Slug,
+				"BuildId": fmt.Sprintf("build-%d", buildInfo.Number),
+			},
+		}))
+
+		for _, stage := range buildInfo.Stages {
+			// Loop through build info stages and save the results into DB
+			// Don't save running pipelines and set BuildState integer according to the status because of Grafana
+			if stage.Status != "running" {
+				stageFields = append(stageFields, structs.Map(&influxdb.Stage{
+					Time:     time.Unix(stage.Started, 0),
+					WaitTime: stage.Started - stage.Created,
+					Duration: stage.Stopped - stage.Started,
+					OS:       stage.OS,
+					Arch:     stage.Arch,
+					Status:   stage.Status,
+					Name:     stage.Name,
+					Tags: map[string]string{
+						"Slug":    repo.Slug,
+						"BuildId": fmt.Sprintf("build-%d", build.Number),
+						"Sender":  build.Sender,
+						"Name":    stage.Name,
+						"OS":      stage.OS,
+						"Arch":    stage.Arch,
+						"Status":  stage.Status,
+					},
+				}))
+			}
+
+			for _, step := range stage.Steps {
+				stepFields = append(stepFields, structs.Map(&influxdb.Step{
+					Time:     time.Unix(step.Started, 0),
+					Duration: step.Stopped - step.Started,
+					Name:     step.Name,
+					Status:   step.Status,
+					Tags: map[string]string{
+						"Slug":    repo.Slug,
+						"BuildId": fmt.Sprintf("build-%d", build.Number),
+						"Sender":  build.Sender,
+						"Name":    step.Name,
+						"Status":  step.Status,
+					},
+				}))
+			}
+		}
+	}
+
+	if len(stageFields) > 0 {
+		log.Debugf("[%s] sending %d stages to db", repo.Slug, len(stageFields))
+		go func() {
+			err = influxdb.Batch("stages", stageFields)
+			if err != nil {
+				log.Error(err)
+			}
+		}()
+	}
+
+	if len(stepFields) > 0 {
+		log.Debugf("[%s] sending %d steps to db", repo.Slug, len(stepFields))
+		go func() {
+			err = influxdb.Batch("steps", stepFields)
+			if err != nil {
+				log.Error(err)
+			}
+		}()
+	}
+
+	if len(buildFields) > 0 {
+		log.Debugf("[%s] sending %d builds to db", repo.Slug, len(buildFields))
+		go func() {
+			err = influxdb.Batch("builds", buildFields)
+			if err != nil {
+				log.Error(err)
+			}
+		}()
 	}
 }
