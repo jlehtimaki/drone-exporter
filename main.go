@@ -86,6 +86,9 @@ func main() {
 			var stageFields []map[string]interface{}
 			var stepFields []map[string]interface{}
 			for _, build := range builds {
+				if build.Status == "running" {
+					continue
+				}
 				buildInfo, err := cli.Build(repo.Namespace, repo.Name, int(build.Number))
 				if err != nil {
 					log.Fatal(err)
