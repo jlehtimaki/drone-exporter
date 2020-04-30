@@ -234,9 +234,13 @@ func processBuilds(repo *dronecli.Repo, builds []*dronecli.Build) []types.Point 
 			})
 
 			for _, step := range stage.Steps {
+				duration := step.Stopped - step.Started
+				if duration < 0 {
+					duration = 0
+				}
 				points = append(points, &types.Step{
 					Time:     time.Unix(step.Started, 0),
-					Duration: step.Stopped - step.Started,
+					Duration: duration,
 					Name:     step.Name,
 					Status:   step.Status,
 					Tags: map[string]string{
