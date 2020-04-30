@@ -78,19 +78,19 @@ func main() {
 		for _, repo := range repos {
 			r := repo
 			go func() {
-				log.Debugf("[%s] starting thread", repo.Slug)
+				log.Debugf("[%s] starting thread", r.Slug)
 				defer wg.Done()
 				sem <- struct{}{}
 				defer func() { <-sem }()
 				points := processRepo(r, driver.LastBuildNumber(r.Slug))
 				if len(points) > 0 {
-					log.Debugf("[%s] sending %d points to db", repo.Slug, len(points))
+					log.Debugf("[%s] sending %d points to db", r.Slug, len(points))
 					err = driver.Batch(points)
 					if err != nil {
 						log.Error(err)
 					}
 				}
-				log.Debugf("[%s] thread complete", repo.Slug)
+				log.Debugf("[%s] thread complete", r.Slug)
 			}()
 		}
 		wg.Wait()
