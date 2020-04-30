@@ -28,6 +28,7 @@ func stripTags(point Point) map[string]interface{} {
 type Tags map[string]string
 type Build struct {
 	Time     time.Time
+	Status   string
 	BuildId  int64
 	Number   int64
 	WaitTime int64

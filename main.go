@@ -178,6 +178,7 @@ func processBuilds(repo *dronecli.Repo, builds []*dronecli.Build) []types.Point 
 		points = append(points, &types.Build{
 			Time:     time.Unix(buildInfo.Started, 0),
 			Number:   buildInfo.Number,
+			Status:   buildInfo.Status,
 			WaitTime: waittime,
 			Duration: duration,
 			Source:   buildInfo.Source,
@@ -189,6 +190,7 @@ func processBuilds(repo *dronecli.Repo, builds []*dronecli.Build) []types.Point 
 			Tags: map[string]string{
 				"DroneAddress": drone.GetHost(),
 				"Slug":         repo.Slug,
+				"Status":       buildInfo.Status,
 				"BuildId":      fmt.Sprintf("build-%d", buildInfo.Number),
 			},
 		})
