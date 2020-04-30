@@ -162,14 +162,14 @@ func processBuilds(repo *dronecli.Repo, builds []*dronecli.Build) []types.Point 
 		}
 
 		var waittime int64
-		if stage.Stopped == 0 {
+		if buildInfo.Started == 0 {
 			waittime = buildInfo.Updated - buildInfo.Created
 		} else {
 			waittime = buildInfo.Started - buildInfo.Created
 		}
 
 		var duration int64
-		if stage.Stopped == 0 {
+		if buildInfo.Finished == 0 {
 			duration = buildInfo.Updated - buildInfo.Started
 		} else {
 			duration = buildInfo.Finished - buildInfo.Started
@@ -197,7 +197,7 @@ func processBuilds(repo *dronecli.Repo, builds []*dronecli.Build) []types.Point 
 			// Loop through build info stages and save the results into DB
 			// Don't save running pipelines and set BuildState integer according to the status because of Grafana
 			var waittime int64
-			if stage.Created == 0 {
+			if stage.Started == 0 {
 				waittime = stage.Updated - stage.Created
 			} else {
 				duration = stage.Started - stage.Created
@@ -212,7 +212,7 @@ func processBuilds(repo *dronecli.Repo, builds []*dronecli.Build) []types.Point 
 
 			points = append(points, &types.Stage{
 				Time:     time.Unix(stage.Started, 0),
-				WaitTime: duration,
+				WaitTime: waittime,
 				Duration: duration,
 				OS:       stage.OS,
 				Arch:     stage.Arch,

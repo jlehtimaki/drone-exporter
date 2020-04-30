@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/jlehtimaki/drone-exporter/pkg/drone"
+
 	client "github.com/influxdata/influxdb1-client/v2"
 	"github.com/jlehtimaki/drone-exporter/pkg/env"
 	"github.com/jlehtimaki/drone-exporter/pkg/types"
@@ -17,7 +19,7 @@ var (
 	password      = env.GetEnv("INFLUXDB_PASSWORD", "bar")
 )
 
-const LastBuildIdQueryFmt = `SELECT last("BuildId") AS "last_id" FROM "%s"."autogen"."builds" WHERE "Slug"='%s'`
+const LastBuildIdQueryFmt = `SELECT last("BuildId") AS "last_id" FROM "%s"."autogen"."builds" WHERE "Slug"='%s' AND "DroneAddress"='%s'`
 
 type driver struct {
 	client client.Client
@@ -52,7 +54,7 @@ func (d *driver) Close() error {
 }
 
 func (d *driver) LastBuildNumber(slug string) int64 {
-	q := client.NewQuery(fmt.Sprintf(LastBuildIdQueryFmt, database, slug), database, "s")
+	q := client.NewQuery(fmt.Sprintf(LastBuildIdQueryFmt, database, slug, drone.GetHost()), database, "s")
 	response, err := d.client.Query(q)
 	if err != nil {
 		return 0
