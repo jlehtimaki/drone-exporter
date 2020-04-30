@@ -1,13 +1,9 @@
-FROM golang:alpine AS builder
-ENV GOARCH=amd64 GOOS=linux CGO_ENABLED=0
+FROM golang:1-alpine AS builder
 WORKDIR /build
-
 COPY . .
+RUN go build -mod vendor
 
-RUN go build
-
-FROM golang:alpine
-
+FROM alpine
 COPY --from=builder /build/drone-exporter /bin/
 
 ENTRYPOINT ["/bin/drone-exporter"]

@@ -4,21 +4,23 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"sync"
 	"time"
 
 	dronecli "github.com/drone/drone-go/drone"
-	"github.com/fatih/structs"
 	"github.com/jlehtimaki/drone-exporter/pkg/drivers/influxdb"
 	"github.com/jlehtimaki/drone-exporter/pkg/drone"
 	"github.com/jlehtimaki/drone-exporter/pkg/env"
+	"github.com/jlehtimaki/drone-exporter/pkg/types"
 	log "github.com/sirupsen/logrus"
 )
 
-var logLevel = env.GetEnv("LOG_LEVEL", "error")
-var driver = env.GetEnv("DRIVER", "influxdb")
-var cli dronecli.Client
-
 const pageSize = 25
+
+var logLevel = env.GetEnv("LOG_LEVEL", "error")
+var envInterval = env.GetEnv("INTERVAL", "2")
+var envThreads = env.GetEnv("THREADS", "10")
+var cli dronecli.Client
 
 func main() {
 	// Set logging format
@@ -36,95 +38,123 @@ func main() {
 		log.SetLevel(log.ErrorLevel)
 	}
 
-	// generate driver client from env vars for error checking
-	switch driver {
-	case "influxdb":
-		_, err := influxdb.GetClient()
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		defer func() {
-			err := influxdb.Close()
-			if err != nil {
-				log.Error(err)
-			}
-		}()
+	// initialize the influx client
+	driver, err := influxdb.NewDriver()
+	if err != nil {
+		log.Fatal(err)
 	}
+	defer driver.Close()
 
 	droneClient := drone.GetClient()
 	if droneClient == nil {
 		log.Fatal(errors.New("unable to create drone client, please check env DRONE_URL and DRONE_TOKEN"))
 	}
-
 	cli = *droneClient
 
 	// Get loop interval
-	interval, err := strconv.Atoi(env.GetEnv("INTERVAL", "2"))
+	interval, err := strconv.Atoi(envInterval)
 	if err != nil {
-		log.Fatal("could not convert INTERVAL value: %s to integer", interval)
+		log.Fatal("could not convert INTERVAL value: %s to integer", envInterval)
 	}
+
+	threads, err := strconv.Atoi(envThreads)
+	if err != nil {
+		log.Fatal("could not convert THREADS value: %s to integer", envThreads)
+	}
+
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, threads)
 
 	// Start main loop
 	for {
-		log.Info("Getting Repos")
+
 		repos, err := cli.RepoList()
 		if err != nil {
 			log.Fatal(err)
 		}
 
+		log.Infof("[drone-exporter] processing %d repos", len(repos))
+		wg.Add(len(repos))
 		for _, repo := range repos {
-			// process first page
-			page := 1
-			builds, err := cli.BuildList(repo.Namespace, repo.Name, dronecli.ListOptions{
-				Page: page,
-				Size: pageSize,
-			})
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			if len(builds) == 0 {
-				continue
-			}
-			processBuilds(repo, builds)
-			if len(builds) < pageSize {
-				continue //no pages
-			}
-
-			//paginate
-			for len(builds) > 0 {
-				page++
-				builds, err = cli.BuildList(repo.Namespace, repo.Name, dronecli.ListOptions{
-					Page: page,
-					Size: pageSize,
-				})
-				if err != nil {
-					log.Fatal(err)
+			r := repo
+			go func() {
+				log.Debugf("[%s] starting thread", repo.Slug)
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				points := processRepo(r, driver.LastBuildNumber(r.Slug))
+				if len(points) > 0 {
+					log.Debugf("[%s] sending %d points to db", repo.Slug, len(points))
+					err = driver.Batch(points)
+					if err != nil {
+						log.Error(err)
+					}
 				}
-
-				if len(builds) == 0 {
-					continue
-				}
-				processBuilds(repo, builds)
-				if len(builds) < pageSize {
-					continue
-				}
-			}
-
+				log.Debugf("[%s] thread complete", repo.Slug)
+			}()
 		}
+		wg.Wait()
 
-		log.Infof("Waiting %d minutes", interval)
+		log.Infof("[drone-exporter] waiting %d minutes", interval)
 		time.Sleep(time.Duration(interval) * time.Minute)
 	}
 }
 
-func processBuilds(repo *dronecli.Repo, builds []*dronecli.Build) {
+func processRepo(repo *dronecli.Repo, lastBuildId int64) []types.Point {
+	var points []types.Point
+
+	// process first page
+	page := 1
+	builds, err := cli.BuildList(repo.Namespace, repo.Name, dronecli.ListOptions{
+		Page: page,
+		Size: pageSize,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if len(builds) == 0 {
+		log.Debugf("[%s] found zero builds, skipping...", repo.Name)
+		return []types.Point{}
+	}
+
+	if builds[0].Number == lastBuildId {
+		log.Debugf("[%s] found no new builds, skipping...", repo.Name)
+		return []types.Point{}
+	}
+
+	points = append(points, processBuilds(repo, builds)...)
+	if len(builds) < pageSize {
+		return []types.Point{} //no pages
+	}
+
+	// paginate
+	for len(builds) > 0 {
+		page++
+		builds, err = cli.BuildList(repo.Namespace, repo.Name, dronecli.ListOptions{
+			Page: page,
+			Size: pageSize,
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if len(builds) == 0 {
+			continue
+		}
+		ps := processBuilds(repo, builds)
+		points = append(points, ps...)
+		if len(builds) < pageSize {
+			continue
+		}
+	}
+
+	return points
+}
+
+func processBuilds(repo *dronecli.Repo, builds []*dronecli.Build) []types.Point {
 	log.Debugf("[%s] processing %d builds", repo.Slug, len(builds))
-	var buildFields []map[string]interface{}
-	var stageFields []map[string]interface{}
-	var stepFields []map[string]interface{}
-	var err error
+	var points []types.Point
 	for _, build := range builds {
 		if build.Status == "running" {
 			continue
@@ -134,7 +164,7 @@ func processBuilds(repo *dronecli.Repo, builds []*dronecli.Build) {
 			log.Fatal(err)
 		}
 
-		buildFields = append(buildFields, structs.Map(&influxdb.Build{
+		points = append(points, &types.Build{
 			Time:     time.Unix(buildInfo.Started, 0),
 			Number:   buildInfo.Number,
 			WaitTime: buildInfo.Started - buildInfo.Created,
@@ -144,17 +174,18 @@ func processBuilds(repo *dronecli.Repo, builds []*dronecli.Build) {
 			Started:  buildInfo.Started,
 			Created:  buildInfo.Created,
 			Finished: buildInfo.Finished,
+			BuildId:  build.Number,
 			Tags: map[string]string{
 				"Slug":    repo.Slug,
 				"BuildId": fmt.Sprintf("build-%d", buildInfo.Number),
 			},
-		}))
+		})
 
 		for _, stage := range buildInfo.Stages {
 			// Loop through build info stages and save the results into DB
 			// Don't save running pipelines and set BuildState integer according to the status because of Grafana
 			if stage.Status != "running" {
-				stageFields = append(stageFields, structs.Map(&influxdb.Stage{
+				points = append(points, &types.Stage{
 					Time:     time.Unix(stage.Started, 0),
 					WaitTime: stage.Started - stage.Created,
 					Duration: stage.Stopped - stage.Started,
@@ -162,6 +193,7 @@ func processBuilds(repo *dronecli.Repo, builds []*dronecli.Build) {
 					Arch:     stage.Arch,
 					Status:   stage.Status,
 					Name:     stage.Name,
+					BuildId:  build.Number,
 					Tags: map[string]string{
 						"Slug":    repo.Slug,
 						"BuildId": fmt.Sprintf("build-%d", build.Number),
@@ -171,11 +203,11 @@ func processBuilds(repo *dronecli.Repo, builds []*dronecli.Build) {
 						"Arch":    stage.Arch,
 						"Status":  stage.Status,
 					},
-				}))
+				})
 			}
 
 			for _, step := range stage.Steps {
-				stepFields = append(stepFields, structs.Map(&influxdb.Step{
+				points = append(points, &types.Step{
 					Time:     time.Unix(step.Started, 0),
 					Duration: step.Stopped - step.Started,
 					Name:     step.Name,
@@ -187,38 +219,10 @@ func processBuilds(repo *dronecli.Repo, builds []*dronecli.Build) {
 						"Name":    step.Name,
 						"Status":  step.Status,
 					},
-				}))
+				})
 			}
 		}
 	}
 
-	if len(stageFields) > 0 {
-		log.Debugf("[%s] sending %d stages to db", repo.Slug, len(stageFields))
-		go func() {
-			err = influxdb.Batch("stages", stageFields)
-			if err != nil {
-				log.Error(err)
-			}
-		}()
-	}
-
-	if len(stepFields) > 0 {
-		log.Debugf("[%s] sending %d steps to db", repo.Slug, len(stepFields))
-		go func() {
-			err = influxdb.Batch("steps", stepFields)
-			if err != nil {
-				log.Error(err)
-			}
-		}()
-	}
-
-	if len(buildFields) > 0 {
-		log.Debugf("[%s] sending %d builds to db", repo.Slug, len(buildFields))
-		go func() {
-			err = influxdb.Batch("builds", buildFields)
-			if err != nil {
-				log.Error(err)
-			}
-		}()
-	}
+	return points
 }

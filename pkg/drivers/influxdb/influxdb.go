@@ -1,25 +1,39 @@
 package influxdb
 
 import (
-	"time"
+	"encoding/json"
+	"fmt"
+	"strconv"
 
 	client "github.com/influxdata/influxdb1-client/v2"
 	"github.com/jlehtimaki/drone-exporter/pkg/env"
+	"github.com/jlehtimaki/drone-exporter/pkg/types"
 )
 
 var (
-	influxAddress = env.GetEnv("DB_ADDRESS", "http://localhost:8086")
-	database      = env.GetEnv("DATABASE", "example")
-	username      = env.GetEnv("DB_USERNAME", "foo")
-	password      = env.GetEnv("DB_PASSWORD", "bar")
-	influxClient  client.Client
+	influxAddress = env.GetEnv("INFLUXDB_ADDRESS", "http://influxdb:8086")
+	database      = env.GetEnv("INFLUXDB_DATABASE", "example")
+	username      = env.GetEnv("INFLUXDB_USERNAME", "foo")
+	password      = env.GetEnv("INFLUXDB_PASSWORD", "bar")
 )
 
-func GetClient() (client.Client, error) {
-	if influxClient != nil {
-		return influxClient, nil
-	}
+const LastBuildIdQueryFmt = `SELECT last("BuildId") AS "last_id" FROM "%s"."autogen"."builds" WHERE "Slug"='%s'`
 
+type driver struct {
+	client client.Client
+}
+
+func NewDriver() (*driver, error) {
+	client, err := getClient()
+	if err != nil {
+		return nil, err
+	}
+	return &driver{
+		client: client,
+	}, nil
+}
+
+func getClient() (client.Client, error) {
 	c, err := client.NewHTTPClient(client.HTTPConfig{
 		Addr:     influxAddress,
 		Username: username,
@@ -30,26 +44,42 @@ func GetClient() (client.Client, error) {
 		return nil, err
 	}
 
-	influxClient = c
-	return influxClient, nil
+	return c, nil
 }
 
-func Close() error {
-	c, err := GetClient()
+func (d *driver) Close() error {
+	return d.client.Close()
+}
+
+func (d *driver) LastBuildNumber(slug string) int64 {
+	q := client.NewQuery(fmt.Sprintf(LastBuildIdQueryFmt, database, slug), database, "s")
+	response, err := d.client.Query(q)
 	if err != nil {
-		return err
+		return 0
 	}
 
-	if c == nil {
-		return nil
+	if response.Error() != nil {
+		return 0
 	}
 
-	return c.Close()
+	if len(response.Results[0].Series) > 0 {
+		s := string(response.Results[0].Series[0].Values[0][1].(json.Number))
+		ret, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			return 0
+		}
+		return ret
+	}
+
+	return 0
 }
 
-func Run(builds map[string]interface{}, pipelineName string) error {
+func (d *driver) Batch(points []types.Point) error {
 	// Create a new point batch
-	bp, err := client.NewBatchPoints(client.BatchPointsConfig{
+	var bp client.BatchPoints
+	var err error
+
+	bp, err = client.NewBatchPoints(client.BatchPointsConfig{
 		Database:  database,
 		Precision: "s",
 	})
@@ -57,53 +87,34 @@ func Run(builds map[string]interface{}, pipelineName string) error {
 		return err
 	}
 
-	tags := map[string]string{"Pipeline": pipelineName}
-	// Create a point and add to batch
-	pt, err := client.NewPoint("drone", tags, builds, builds["Time"].(time.Time))
-	if err != nil {
-		return err
-	}
-	bp.AddPoint(pt)
+	i := 0
+	for _, point := range points {
 
-	// Write the batch
-	c, err := GetClient()
-	if err != nil {
-		return err
-	}
-	if err := c.Write(bp); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func Batch(measurement string, fieldList []map[string]interface{}) error {
-	// Create a new point batch
-	bp, err := client.NewBatchPoints(client.BatchPointsConfig{
-		Database:  database,
-		Precision: "s",
-	})
-	if err != nil {
-		return err
-	}
-
-	for _, fields := range fieldList {
-		// Create a point and add to batch
-		tags := fields["Tags"].(map[string]string)
-		delete(fields, "Tags")
-		pt, err := client.NewPoint(measurement, tags, fields, fields["Time"].(time.Time))
+		pt, err := client.NewPoint(point.GetMeasurement(), point.GetTags(), point.GetFields(), point.GetTime())
 		if err != nil {
 			return err
 		}
 		bp.AddPoint(pt)
+
+		i++
+
+		// max batch of 10k
+		if i > 9999 {
+			i = 0
+			if err := d.client.Write(bp); err != nil {
+				return err
+			}
+			bp, err = client.NewBatchPoints(client.BatchPointsConfig{
+				Database:  database,
+				Precision: "s",
+			})
+			if err != nil {
+				return err
+			}
+		}
 	}
 
-	// Write the batch
-	c, err := GetClient()
-	if err != nil {
-		return err
-	}
-	if err := c.Write(bp); err != nil {
+	if err := d.client.Write(bp); err != nil {
 		return err
 	}
 
