@@ -156,19 +156,30 @@ func processBuilds(repo *dronecli.Repo, builds []*dronecli.Build) []types.Point 
 	log.Debugf("[%s] processing %d builds", repo.Slug, len(builds))
 	var points []types.Point
 	for _, build := range builds {
-		if build.Status == "running" {
-			continue
-		}
 		buildInfo, err := cli.Build(repo.Namespace, repo.Name, int(build.Number))
 		if err != nil {
 			log.Fatal(err)
 		}
 
+		var waittime int64
+		if stage.Stopped == 0 {
+			waittime = buildInfo.Updated - buildInfo.Created
+		} else {
+			waittime = buildInfo.Started - buildInfo.Created
+		}
+
+		var duration int64
+		if stage.Stopped == 0 {
+			duration = buildInfo.Updated - buildInfo.Started
+		} else {
+			duration = buildInfo.Finished - buildInfo.Started
+		}
+
 		points = append(points, &types.Build{
 			Time:     time.Unix(buildInfo.Started, 0),
 			Number:   buildInfo.Number,
-			WaitTime: buildInfo.Started - buildInfo.Created,
-			Duration: buildInfo.Finished - buildInfo.Started,
+			WaitTime: waittime,
+			Duration: duration,
 			Source:   buildInfo.Source,
 			Target:   buildInfo.Target,
 			Started:  buildInfo.Started,
@@ -176,35 +187,49 @@ func processBuilds(repo *dronecli.Repo, builds []*dronecli.Build) []types.Point 
 			Finished: buildInfo.Finished,
 			BuildId:  build.Number,
 			Tags: map[string]string{
-				"Slug":    repo.Slug,
-				"BuildId": fmt.Sprintf("build-%d", buildInfo.Number),
+				"DroneAddress": drone.GetHost(),
+				"Slug":         repo.Slug,
+				"BuildId":      fmt.Sprintf("build-%d", buildInfo.Number),
 			},
 		})
 
 		for _, stage := range buildInfo.Stages {
 			// Loop through build info stages and save the results into DB
 			// Don't save running pipelines and set BuildState integer according to the status because of Grafana
-			if stage.Status != "running" {
-				points = append(points, &types.Stage{
-					Time:     time.Unix(stage.Started, 0),
-					WaitTime: stage.Started - stage.Created,
-					Duration: stage.Stopped - stage.Started,
-					OS:       stage.OS,
-					Arch:     stage.Arch,
-					Status:   stage.Status,
-					Name:     stage.Name,
-					BuildId:  build.Number,
-					Tags: map[string]string{
-						"Slug":    repo.Slug,
-						"BuildId": fmt.Sprintf("build-%d", build.Number),
-						"Sender":  build.Sender,
-						"Name":    stage.Name,
-						"OS":      stage.OS,
-						"Arch":    stage.Arch,
-						"Status":  stage.Status,
-					},
-				})
+			var waittime int64
+			if stage.Created == 0 {
+				waittime = stage.Updated - stage.Created
+			} else {
+				duration = stage.Started - stage.Created
 			}
+
+			var duration int64
+			if stage.Stopped == 0 {
+				duration = stage.Updated - stage.Started
+			} else {
+				duration = stage.Stopped - stage.Started
+			}
+
+			points = append(points, &types.Stage{
+				Time:     time.Unix(stage.Started, 0),
+				WaitTime: duration,
+				Duration: duration,
+				OS:       stage.OS,
+				Arch:     stage.Arch,
+				Status:   stage.Status,
+				Name:     stage.Name,
+				BuildId:  build.Number,
+				Tags: map[string]string{
+					"DroneAddress": drone.GetHost(),
+					"Slug":         repo.Slug,
+					"BuildId":      fmt.Sprintf("build-%d", build.Number),
+					"Sender":       build.Sender,
+					"Name":         stage.Name,
+					"OS":           stage.OS,
+					"Arch":         stage.Arch,
+					"Status":       stage.Status,
+				},
+			})
 
 			for _, step := range stage.Steps {
 				points = append(points, &types.Step{
@@ -213,11 +238,12 @@ func processBuilds(repo *dronecli.Repo, builds []*dronecli.Build) []types.Point 
 					Name:     step.Name,
 					Status:   step.Status,
 					Tags: map[string]string{
-						"Slug":    repo.Slug,
-						"BuildId": fmt.Sprintf("build-%d", build.Number),
-						"Sender":  build.Sender,
-						"Name":    step.Name,
-						"Status":  step.Status,
+						"DroneAddress": drone.GetHost(),
+						"Slug":         repo.Slug,
+						"BuildId":      fmt.Sprintf("build-%d", build.Number),
+						"Sender":       build.Sender,
+						"Name":         step.Name,
+						"Status":       step.Status,
 					},
 				})
 			}

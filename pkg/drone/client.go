@@ -38,6 +38,10 @@ func GetClient() *dronecli.Client {
 	return client
 }
 
+func GetHost() string {
+	return host
+}
+
 //func ApiRequest(subUrlPath string) (string, error) {
 //	c := getClient()
 //	if c == nil {
