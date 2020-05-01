@@ -161,6 +161,10 @@ func processBuilds(repo *dronecli.Repo, builds []*dronecli.Build) []types.Point 
 			log.Fatal(err)
 		}
 
+		if buildInfo.Status == "running" {
+			continue
+		}
+
 		var waittime int64
 		if buildInfo.Started == 0 {
 			waittime = buildInfo.Updated - buildInfo.Created
