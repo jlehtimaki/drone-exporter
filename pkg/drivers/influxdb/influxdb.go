@@ -101,7 +101,7 @@ func (d *driver) Batch(points []types.Point) error {
 		i++
 
 		// max batch of 10k
-		if i > 9999 {
+		if i > 500 {
 			i = 0
 			if err := d.client.Write(bp); err != nil {
 				return err
