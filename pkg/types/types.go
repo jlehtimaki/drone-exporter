@@ -92,6 +92,7 @@ func (p Stage) GetMeasurement() string {
 
 type Step struct {
 	Time     time.Time
+	BuildId  int64
 	Duration int64
 	Started  int64
 	Stopped  int64

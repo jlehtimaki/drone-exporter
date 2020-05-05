@@ -1,3 +1,5 @@
 .idea
 drone-exporter
 !cmd/drone-exporter
+docker-compose.*.yml
+env.*

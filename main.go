@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"strconv"
 	"sync"
 	"time"
@@ -195,7 +194,6 @@ func processBuilds(repo *dronecli.Repo, builds []*dronecli.Build) []types.Point 
 				"DroneAddress": drone.GetHost(),
 				"Slug":         repo.Slug,
 				"Status":       buildInfo.Status,
-				"BuildId":      fmt.Sprintf("build-%d", buildInfo.Number),
 			},
 		})
 
@@ -228,7 +226,6 @@ func processBuilds(repo *dronecli.Repo, builds []*dronecli.Build) []types.Point 
 				Tags: map[string]string{
 					"DroneAddress": drone.GetHost(),
 					"Slug":         repo.Slug,
-					"BuildId":      fmt.Sprintf("build-%d", build.Number),
 					"Sender":       build.Sender,
 					"Name":         stage.Name,
 					"OS":           stage.OS,
@@ -247,10 +244,10 @@ func processBuilds(repo *dronecli.Repo, builds []*dronecli.Build) []types.Point 
 					Duration: duration,
 					Name:     step.Name,
 					Status:   step.Status,
+					BuildId:  build.Number,
 					Tags: map[string]string{
 						"DroneAddress": drone.GetHost(),
 						"Slug":         repo.Slug,
-						"BuildId":      fmt.Sprintf("build-%d", build.Number),
 						"Sender":       build.Sender,
 						"Name":         step.Name,
 						"Status":       step.Status,
