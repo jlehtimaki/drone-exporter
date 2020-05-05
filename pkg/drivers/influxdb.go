@@ -26,7 +26,7 @@ func Run(builds map[string]interface{}, pipelineName string){
 		// Create a new point batch
 		bp, err := client.NewBatchPoints(client.BatchPointsConfig{
 			Database:  database,
-			Precision: "us",
+			Precision: "ms",
 		})
 		if err != nil {
 			log.Fatal(err)
