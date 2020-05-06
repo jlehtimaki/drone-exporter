@@ -53,12 +53,12 @@ func main() {
 	// Get loop interval
 	interval, err := strconv.Atoi(envInterval)
 	if err != nil {
-		log.Fatal("could not convert INTERVAL value: %s to integer", envInterval)
+		log.Fatalf("could not convert INTERVAL value: %s to integer", envInterval)
 	}
 
 	threads, err := strconv.Atoi(envThreads)
 	if err != nil {
-		log.Fatal("could not convert THREADS value: %s to integer", envThreads)
+		log.Fatalf("could not convert THREADS value: %s to integer", envThreads)
 	}
 
 	var wg sync.WaitGroup
@@ -204,7 +204,7 @@ func processBuilds(repo *dronecli.Repo, builds []*dronecli.Build) []types.Point 
 			if stage.Started == 0 {
 				waittime = stage.Updated - stage.Created
 			} else {
-				duration = stage.Started - stage.Created
+				waittime = stage.Started - stage.Created
 			}
 
 			var duration int64
