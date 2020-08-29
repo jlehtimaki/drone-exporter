@@ -1,0 +1,32 @@
+version: '3.7'
+
+services:
+  api:
+    build: .
+    container_name: drone-exporter
+    depends_on:
+      - influxdb
+    links:
+      - influxdb
+    environment:
+      INTERVAL: 2
+      THREADS: 10
+      DRONE_URL:
+      DRONE_TOKEN:
+      INFLUXDB_ADDRESS:
+      INFLUXDB_USERNAME:
+      INFLUXDB_PASSWORD:
+      INFLUXDB_DATABASE:
+  influxdb:
+    image: influxdb:latest
+    container_name: influxdb
+    ports:
+      - "8083:8083"
+      - "8086:8086"
+      - "8090:8090"
+    env_file:
+      - 'env.influxdb'
+    volumes:
+      # Data persistency
+      # sudo mkdir -p /srv/docker/influxdb/data
+      - ./.influxdb:/var/lib/influxdb
