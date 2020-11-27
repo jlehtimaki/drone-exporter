@@ -1,6 +1,6 @@
 # Drone Exporter
-Daemon to extract data from the Drone API and push it into a backend powered by a database driver.
-
+Daemon to extract data from the Drone API and push it into a backend powered by a database driver. \
+Docker image: quay.io/jlehtimaki/drone-exporter
 ## Key Features
 * Supports Multi-threaded, process 1 repo's builds per thread
 * On first boot, will grab all data from Drone and import it
@@ -92,9 +92,9 @@ DRONE_URL=https://dronezerver.xyz DRONE_TOKEN=abcde12345 ./drone-exporter
 
 ### Docker
 ```bash
-docker build -t lehtux/drone-exporter .
+docker build -t quay.io/jlehtimaki/drone-exporter .
 # add more envs using -e, see below
-docker run -d -e DRONE_URL https://droneserver.xyz -e DRONE_TOKEN abcde12345 lehtux/drone-exporter
+docker run -d -e DRONE_URL https://droneserver.xyz -e DRONE_TOKEN abcde12345 quay.io/jlehtimaki/drone-exporter
 ```
 
 ## Environment Variables

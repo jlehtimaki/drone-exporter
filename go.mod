@@ -1,6 +1,6 @@
 module github.com/jlehtimaki/drone-exporter
 
-go 1.13
+go 1.15
 
 require (
 	github.com/drone/drone-go v1.3.1
