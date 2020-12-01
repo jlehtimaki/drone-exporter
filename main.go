@@ -200,11 +200,12 @@ func processBuilds(repo *dronecli.Repo, builds []*dronecli.Build) []types.Point 
 		for _, stage := range buildInfo.Stages {
 			// Loop through build info stages and save the results into DB
 			// Don't save running pipelines and set BuildState integer according to the status because of Grafana
-			var waittime int64
+			var waitTime int64
+			statusInt := int64(0)
 			if stage.Started == 0 {
-				waittime = stage.Updated - stage.Created
+				waitTime = stage.Updated - stage.Created
 			} else {
-				waittime = stage.Started - stage.Created
+				waitTime = stage.Started - stage.Created
 			}
 
 			var duration int64
@@ -214,15 +215,20 @@ func processBuilds(repo *dronecli.Repo, builds []*dronecli.Build) []types.Point 
 				duration = stage.Stopped - stage.Started
 			}
 
+			if stage.Status == "success" {
+				statusInt = 1
+			}
+
 			points = append(points, &types.Stage{
-				Time:     time.Unix(stage.Started, 0),
-				WaitTime: waittime,
-				Duration: duration,
-				OS:       stage.OS,
-				Arch:     stage.Arch,
-				Status:   stage.Status,
-				Name:     stage.Name,
-				BuildId:  build.Number,
+				Time:      time.Unix(stage.Started, 0),
+				WaitTime:  waitTime,
+				Duration:  duration,
+				OS:        stage.OS,
+				Arch:      stage.Arch,
+				Status:    stage.Status,
+				StatusInt: statusInt,
+				Name:      stage.Name,
+				BuildId:   build.Number,
 				Tags: map[string]string{
 					"DroneAddress": drone.GetHost(),
 					"Slug":         repo.Slug,

@@ -60,18 +60,19 @@ func (p Build) GetMeasurement() string {
 }
 
 type Stage struct {
-	Time     time.Time
-	BuildId  int64
-	WaitTime int64
-	Duration int64
-	Created  int64
-	Started  int64
-	Stopped  int64
-	OS       string
-	Arch     string
-	Status   string
-	Name     string
-	Tags     Tags
+	Time      time.Time
+	BuildId   int64
+	WaitTime  int64
+	Duration  int64
+	Created   int64
+	Started   int64
+	Stopped   int64
+	OS        string
+	Arch      string
+	Status    string
+	StatusInt int64
+	Name      string
+	Tags      Tags
 }
 
 func (p Stage) GetTime() time.Time {
